@@ -298,11 +298,26 @@ function handleRowClick(record, event) {
   height: 36px;
   padding-right: 12px;
   padding-left: 12px;
+  transition: color 130ms ease, background-color 130ms ease, transform 100ms ease;
 }
 
 .point-header-actions :deep(.arco-btn-only-icon) {
   width: 36px;
   padding: 0;
+}
+
+.point-header-actions :deep(.arco-btn-text:not(.arco-btn-disabled):hover) {
+  color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.point-header-actions :deep(.arco-btn-status-danger:not(.arco-btn-disabled):hover) {
+  color: #e84646;
+  background: var(--danger-soft);
+}
+
+.point-header-actions :deep(.arco-btn:not(.arco-btn-disabled):active) {
+  transform: scale(0.95);
 }
 
 .table-wrap {
@@ -318,6 +333,7 @@ function handleRowClick(record, event) {
 }
 
 .table-wrap :deep(.arco-table-th) {
+  padding: 0 !important;
   color: #3f5570;
   background: #deebfa;
   font-size: 12px;
@@ -325,8 +341,24 @@ function handleRowClick(record, event) {
 }
 
 .table-wrap :deep(.arco-table-td) {
-  padding: 5px 8px !important;
+  padding: 0 !important;
   background: #fff;
+}
+
+.table-wrap :deep(.arco-table-th .arco-table-cell) {
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+.table-wrap :deep(.arco-table-td .arco-table-cell) {
+  padding: 5px 8px;
+}
+
+.table-wrap :deep(.arco-table-td-content),
+.table-wrap :deep(.arco-table-td-content > .arco-select),
+.table-wrap :deep(.arco-table-td-content > .arco-cascader) {
+  width: 100%;
+  min-width: 0;
 }
 
 .table-wrap :deep(.arco-table-tbody .arco-table-tr:nth-child(even) .arco-table-td) {

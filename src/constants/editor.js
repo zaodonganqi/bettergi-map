@@ -13,11 +13,11 @@ export const COMBAT_SCRIPT_KEY = '_combatScriptData';
 // 点位表格基础列；运行列由 editor store 统一插入。
 export const columnsBase = [
   {title: '#', dataIndex: 'id', slotName: 'id', width: 52},
-  {title: '坐标', dataIndex: 'xy', slotName: 'xy', width: 146},
-  {title: '类型', dataIndex: 'type', slotName: 'type', width: 100},
-  {title: '移动方式', dataIndex: 'move_mode', slotName: 'move_mode', width: 112},
-  {title: '动作', dataIndex: 'action', slotName: 'action', width: 250},
-  {title: '操作', slotName: 'operations', width: 108, fixed: 'right'},
+  {title: '坐标', dataIndex: 'xy', slotName: 'xy', width: 150},
+  {title: '类型', dataIndex: 'type', slotName: 'type', width: 110},
+  {title: '移动方式', dataIndex: 'move_mode', slotName: 'move_mode', width: 126},
+  {title: '动作', dataIndex: 'action', slotName: 'action', width: 290},
+  {title: '操作', slotName: 'operations', width: 120, fixed: 'right'},
 ];
 
 // 点位动作级联选项

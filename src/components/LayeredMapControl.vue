@@ -100,12 +100,18 @@ const groupSelectClass = computed(() => ({
   dense: (selectedGroupOption.value?.label.length || 0) > 13,
 }));
 const floorOptions = computed(() => floors.value
-  .map((floor) => ({
-    level: floor.floorLevel,
-    label: floor.label,
-    name: floor.areas.find((area) => String(area.id) === selectedGroupId.value)?.name,
-  }))
+  .map((floor) => {
+    const area = floor.areas.find((item) => String(item.id) === selectedGroupId.value);
+    return {
+      level: floor.floorLevel,
+      floorId: area?.floorId,
+      label: floor.label,
+      name: area?.name,
+    };
+  })
   .filter((floor) => floor.name));
+const selectedFloorId = computed(() => floorOptions.value
+  .find((floor) => floor.level === selectedFloorLevel.value)?.floorId ?? null);
 const visibleGroupOptions = computed(() => {
   if (groupSearch.value.trim() || !viewportReferenceBounds.value) return groupOptions.value;
   const [left, top, right, bottom] = viewportReferenceBounds.value;
@@ -136,6 +142,7 @@ let viewportMap = null;
 let overlayMap = null;
 let cachedGroupId = '';
 let cachedFloorLayers = new Map();
+let cachedBackgroundLayers = new Map();
 let tileTransformObserver = null;
 let overlayResetTimer = 0;
 let overlayGeometryZoom = null;
@@ -210,8 +217,12 @@ function removeCachedLayers() {
     for (const entries of cachedFloorLayers.values()) {
       for (const {overlay} of entries) overlay.removeFrom(overlayMap);
     }
+    for (const {entries} of cachedBackgroundLayers.values()) {
+      for (const {overlay} of entries) overlay.removeFrom(overlayMap);
+    }
   }
   cachedFloorLayers = new Map();
+  cachedBackgroundLayers = new Map();
   cachedGroupId = '';
 }
 
@@ -231,7 +242,7 @@ function clearMode() {
   overlayMap = null;
 }
 
-function setOverlayState(overlay, visible, selected, stackIndex) {
+function setOverlayState(overlay, visible, selected, stackIndex, background = false) {
   const element = overlay.getElement();
   if (!element) return;
   const config = currentMapConfig.value.layeredMap;
@@ -239,6 +250,7 @@ function setOverlayState(overlay, visible, selected, stackIndex) {
   element.style.filter = selected ? 'none' : `brightness(${config.greyedLayerBrightness})`;
   element.style.zIndex = String(selected ? 1000 + stackIndex : stackIndex);
   element.classList.toggle('is-selected-layer', selected);
+  element.classList.toggle('is-background-group', background);
   element.setAttribute('aria-hidden', visible ? 'false' : 'true');
 }
 
@@ -264,6 +276,18 @@ function animateCachedOverlays(event) {
       L.DomUtil.setTransform(element, offset, scale);
     }
   }
+  for (const {entries} of cachedBackgroundLayers.values()) {
+    for (const {overlay} of entries) {
+      const element = overlay.getElement();
+      if (!element) continue;
+      const offset = overlayMap._latLngBoundsToNewLayerBounds(
+        overlay.getBounds(),
+        event.zoom,
+        event.center,
+      ).min;
+      L.DomUtil.setTransform(element, offset, scale);
+    }
+  }
   overlayResetTimer = window.setTimeout(() => {
     overlayResetTimer = 0;
     resetCachedOverlayGeometry();
@@ -272,6 +296,9 @@ function animateCachedOverlays(event) {
 
 function resetCachedOverlayGeometry() {
   for (const entries of cachedFloorLayers.values()) {
+    for (const {overlay} of entries) overlay._reset();
+  }
+  for (const {entries} of cachedBackgroundLayers.values()) {
     for (const {overlay} of entries) overlay._reset();
   }
   overlayGeometryZoom = overlayMap?._loaded ? overlayMap.getZoom() : null;
@@ -293,7 +320,7 @@ function attachTileTransformObserver() {
       && mutation.target.classList.contains('leaflet-tile-container')
     ));
     if (!tileContainerChanged) return;
-    if (!overlayMap?._loaded || cachedFloorLayers.size === 0) return;
+    if (!overlayMap?._loaded || (cachedFloorLayers.size === 0 && cachedBackgroundLayers.size === 0)) return;
     animateCachedOverlays({
       center: overlayMap.getCenter(),
       zoom: overlayMap.getZoom(),
@@ -314,12 +341,24 @@ function showSelectedFloor() {
       buildFloor(level, level === selectedLevel);
     }
   }
+  let stackIndex = 0;
+  const backgroundGroupIds = layerCatalog.value?.groups?.[selectedGroupId.value]?.backgroundGroupIds || [];
+  for (const groupId of backgroundGroupIds) {
+    const records = [...cachedBackgroundLayers.values()]
+      .filter((record) => String(record.groupId) === String(groupId))
+      .sort((a, b) => a.level - b.level);
+    for (const {entries} of records) {
+      for (const {overlay} of entries) setOverlayState(overlay, true, false, stackIndex, true);
+      stackIndex += 1;
+    }
+  }
   const orderedLevels = [...cachedFloorLayers.keys()].sort((a, b) => a - b);
-  orderedLevels.forEach((level, stackIndex) => {
+  orderedLevels.forEach((level) => {
     const visible = selectedLevel !== null;
     for (const {overlay} of cachedFloorLayers.get(level)) {
       setOverlayState(overlay, visible, level === selectedLevel, stackIndex);
     }
+    stackIndex += 1;
   });
 }
 
@@ -338,16 +377,9 @@ function layerImageUrl(id) {
   return `${config.imageDir}/UI_Map_LayeredMap_${id}.${config.format}`;
 }
 
-function buildFloor(level, highPriority = false) {
-  if (cachedFloorLayers.has(level) || !overlayMap) return;
-  const floor = floors.value.find((item) => item.floorLevel === level);
-  const layers = floor?.areas
-    .filter((area) => String(area.id) === selectedGroupId.value)
-    .flatMap((area) => area.layers) || [];
-  if (!layers.length) return;
-
+function createLayerEntries(layers, highPriority = false) {
   const config = currentMapConfig.value.layeredMap;
-  const entries = layers.map((layer) => {
+  return layers.map((layer) => {
     // 在设置 src 前声明优先级，并主动触发解码；切到后续楼层时不再临时解码大图。
     const image = new Image();
     image.fetchPriority = highPriority ? 'high' : 'auto';
@@ -367,7 +399,36 @@ function buildFloor(level, highPriority = false) {
     image.decode?.().catch(() => {});
     return {overlay, bounds: layer.bounds};
   });
+}
+
+function buildFloor(level, highPriority = false) {
+  if (cachedFloorLayers.has(level) || !overlayMap) return;
+  const floor = floors.value.find((item) => item.floorLevel === level);
+  const layers = floor?.areas
+    .filter((area) => String(area.id) === selectedGroupId.value)
+    .flatMap((area) => area.layers) || [];
+  if (!layers.length) return;
+
+  const entries = createLayerEntries(layers, highPriority);
   cachedFloorLayers.set(level, entries);
+}
+
+function buildBackgroundGroups() {
+  const backgroundGroupIds = layerCatalog.value?.groups?.[selectedGroupId.value]?.backgroundGroupIds || [];
+  for (const groupId of backgroundGroupIds) {
+    for (const floor of floors.value) {
+      const area = floor.areas.find((item) => String(item.id) === String(groupId));
+      if (!area?.layers?.length) continue;
+      const key = `${groupId}:${area.floorId ?? floor.floorLevel}`;
+      if (cachedBackgroundLayers.has(key)) continue;
+      cachedBackgroundLayers.set(key, {
+        groupId,
+        floorId: area.floorId,
+        level: floor.floorLevel,
+        entries: createLayerEntries(area.layers),
+      });
+    }
+  }
 }
 
 function buildSelectedGroup() {
@@ -382,6 +443,7 @@ function buildSelectedGroup() {
     return a.level - b.level;
   });
   for (const {level} of orderedFloors) buildFloor(level, level === selectedFloorLevel.value);
+  buildBackgroundGroups();
   showSelectedFloor();
   overlayGeometryZoom = overlayMap?._loaded ? overlayMap.getZoom() : null;
 }
@@ -405,10 +467,12 @@ function renderMode() {
   buildSelectedGroup();
 }
 
-function chooseDefaultFloor() {
+function chooseDefaultFloor(force = false) {
   const options = floorOptions.value;
-  if (options.some((item) => item.level === selectedFloorLevel.value)) return;
-  selectedFloorLevel.value = options.find((item) => item.level === -1)?.level
+  if (!force && options.some((item) => item.floorId === selectedFloorId.value)) return;
+  const defaultFloorId = layerCatalog.value?.groups?.[selectedGroupId.value]?.defaultFloorId;
+  selectedFloorLevel.value = options.find((item) => item.floorId === defaultFloorId)?.level
+    ?? options.find((item) => item.level === -1)?.level
     ?? options.find((item) => item.level === 0)?.level
     ?? [...options].sort((a, b) => Math.abs(a.level) - Math.abs(b.level))[0]?.level
     ?? null;
@@ -451,7 +515,7 @@ watch(map, () => {
   renderMode();
 });
 watch(selectedGroupId, () => {
-  chooseDefaultFloor();
+  chooseDefaultFloor(true);
   if (enabled.value && cachedGroupId !== selectedGroupId.value) buildSelectedGroup();
 });
 watch(selectedFloorLevel, showSelectedFloor);
