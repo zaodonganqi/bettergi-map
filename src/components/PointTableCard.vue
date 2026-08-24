@@ -4,6 +4,7 @@
  *
  * 负责点位编辑、运行、合并拆分和打开相关弹窗。
  */
+import {nextTick, onBeforeUnmount, onMounted, ref} from 'vue';
 import {actionOptionsTree} from '../constants/editor';
 import {formatNumber} from '../utils/format';
 import {
@@ -37,6 +38,29 @@ import {
 import {undoStep, redoStep} from '../composables/useHistory';
 import {actionChange, combatScriptManagerModal} from '../composables/useCombatScripts';
 import {editPointExtParams, deletePointExtParams} from '../composables/usePointExtParams';
+
+const tableWrapElement = ref(null);
+const tableBodyHeight = ref(240);
+let tableResizeObserver = null;
+
+function syncTableBodyHeight() {
+  const wrap = tableWrapElement.value;
+  if (!wrap) return;
+  const header = wrap.querySelector('.arco-table-header');
+  const headerHeight = header?.getBoundingClientRect().height || 41;
+  const nextHeight = Math.max(120, Math.floor(wrap.clientHeight - headerHeight - 2));
+  if (tableBodyHeight.value !== nextHeight) tableBodyHeight.value = nextHeight;
+}
+
+onMounted(() => {
+  nextTick(() => {
+    syncTableBodyHeight();
+    tableResizeObserver = new ResizeObserver(syncTableBodyHeight);
+    if (tableWrapElement.value) tableResizeObserver.observe(tableWrapElement.value);
+  });
+});
+
+onBeforeUnmount(() => tableResizeObserver?.disconnect());
 
 function handleRowClick(record, event) {
   const target = event?.target;
@@ -118,12 +142,12 @@ function handleRowClick(record, event) {
       </div>
     </template>
 
-    <div class="table-wrap">
+    <div ref="tableWrapElement" class="table-wrap">
       <a-table
           :columns="columns"
           :data="selectedPolyline.positions"
           :pagination="false"
-          :scroll="{ x: 900, y: 'calc(100dvh - 300px)' }"
+          :scroll="{ x: 900, y: tableBodyHeight }"
           :sticky-header="true"
           size="small"
           :draggable="{ type: 'row' }"
@@ -264,7 +288,19 @@ function handleRowClick(record, event) {
 .point-table-card {
   position: relative;
   z-index: 0;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  overflow: hidden;
   min-height: 0;
+}
+
+.point-table-card :deep(.arco-card-body) {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .point-table-card :deep(.arco-card-header) {
@@ -321,7 +357,10 @@ function handleRowClick(record, event) {
 }
 
 .table-wrap {
+  flex: 1 1 0;
+  height: 100%;
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid #edf1f6;
   border-radius: var(--radius-md);
@@ -336,8 +375,8 @@ function handleRowClick(record, event) {
   padding: 0 !important;
   color: #3f5570;
   background: #deebfa;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 650;
 }
 
 .table-wrap :deep(.arco-table-td) {
@@ -346,6 +385,9 @@ function handleRowClick(record, event) {
 }
 
 .table-wrap :deep(.arco-table-th .arco-table-cell) {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
   padding: 0 8px;
   white-space: nowrap;
 }
@@ -378,11 +420,15 @@ function handleRowClick(record, event) {
   cursor: grabbing;
 }
 
-.table-wrap :deep(.arco-table-tr-draggable button),
 .table-wrap :deep(.arco-table-tr-draggable input),
-.table-wrap :deep(.arco-table-tr-draggable textarea),
-.table-wrap :deep(.arco-table-tr-draggable .arco-select) {
-  cursor: auto;
+.table-wrap :deep(.arco-table-tr-draggable textarea) {
+  cursor: text;
+}
+
+.table-wrap :deep(.arco-table-tr-draggable button:not(:disabled)),
+.table-wrap :deep(.arco-table-tr-draggable .arco-select:not(.arco-select-disabled)),
+.table-wrap :deep(.arco-table-tr-draggable .arco-cascader:not(.arco-cascader-disabled)) {
+  cursor: pointer;
 }
 
 .table-wrap :deep(.arco-table-tr.selected-row .arco-table-td) {

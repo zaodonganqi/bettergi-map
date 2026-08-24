@@ -69,11 +69,12 @@ function handleSiderWidth(width) {
 }
 
 .workspace-content {
+  display: flex;
   min-width: 0;
   min-height: 0;
   padding: 16px;
   background: var(--app-bg);
-  overflow: auto;
+  overflow: hidden;
 }
 
 @media (max-width: 960px) {

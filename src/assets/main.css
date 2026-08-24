@@ -70,6 +70,23 @@ select {
   font-weight: 500;
 }
 
+button:not(:disabled):not(.arco-btn-disabled):not(.file-row),
+.arco-btn:not(.arco-btn-disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+.arco-select-view:not(.arco-select-view-disabled),
+.arco-cascader:not(.arco-cascader-disabled) {
+  cursor: pointer;
+}
+
+button:disabled,
+.arco-btn-disabled,
+[role="button"][aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
 .arco-btn-size-small {
   min-height: 30px;
 }

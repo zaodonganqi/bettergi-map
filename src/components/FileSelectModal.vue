@@ -25,6 +25,7 @@ import {
 } from '../composables/useFileAccess';
 
 const fileList = ref(null);
+const fileListViewport = ref(null);
 const focusedIndex = ref(-1);
 const selectionAnchorIndex = ref(-1);
 const isMouseSelecting = ref(false);
@@ -143,11 +144,16 @@ function updateMouseSelection() {
   const top = Math.min(mouseStartContentY, currentContentY);
   const right = Math.max(mouseStartContentX, currentContentX);
   const bottom = Math.max(mouseStartContentY, currentContentY);
+  const viewportRect = fileListViewport.value?.getBoundingClientRect() || rect;
+  const startViewportX = Math.max(viewportRect.left, Math.min(mouseStartClientX, viewportRect.right));
+  const startViewportY = Math.max(viewportRect.top, Math.min(mouseStartClientY, viewportRect.bottom));
+  const currentViewportX = Math.max(viewportRect.left, Math.min(mouseClientX, viewportRect.right));
+  const currentViewportY = Math.max(viewportRect.top, Math.min(mouseClientY, viewportRect.bottom));
   selectionBox.value = {
-    left: `${left}px`,
-    top: `${top}px`,
-    width: `${Math.max(2, right - left)}px`,
-    height: `${Math.max(2, bottom - top)}px`,
+    left: `${Math.min(startViewportX, currentViewportX) - viewportRect.left}px`,
+    top: `${Math.min(startViewportY, currentViewportY) - viewportRect.top}px`,
+    width: `${Math.max(2, Math.abs(currentViewportX - startViewportX))}px`,
+    height: `${Math.max(2, Math.abs(currentViewportY - startViewportY))}px`,
   };
 
   const paths = [];
@@ -214,6 +220,7 @@ function finishMouseSelection() {
 function handleListMouseDown(event) {
   if (event.button !== 0) return;
   const rect = fileList.value.getBoundingClientRect();
+  if (event.clientX >= rect.left + fileList.value.clientWidth) return;
   const row = event.target.closest('[data-file-index]');
   suppressRowClickUntil = 0;
   isMouseSelecting.value = true;
@@ -419,47 +426,51 @@ onBeforeUnmount(finishMouseSelection);
         <span>类型</span>
       </div>
 
-      <div
-          ref="fileList"
-          class="file-list"
-          role="listbox"
-          aria-label="路线文件"
-          aria-multiselectable="true"
-          :class="{ 'is-mouse-selecting': isMouseSelecting }"
-          @keydown="handleListKeydown"
-          @mousedown="handleListMouseDown"
-          @click="handleListClick"
-      >
-        <button
-            v-for="(item, index) in displayedFiles"
-            :key="item.RelativePath"
-            type="button"
-            class="file-row"
-            :class="{
-              selected: selectedFiles.includes(item.RelativePath),
-              focused: focusedIndex === index,
-              unavailable: !item.IsDirectory && !isJsonFile(item),
-            }"
-            :data-file-index="index"
-            role="option"
-            :aria-selected="selectedFiles.includes(item.RelativePath)"
-            :tabindex="focusedIndex === index ? 0 : -1"
-            @focus="focusedIndex = index"
-            @dragstart.prevent
-            @click="handleRowClick(item, index, $event)"
-            @dblclick="!item.IsDirectory && activateItem(item, index)"
+      <div ref="fileListViewport" class="file-list-viewport">
+        <div
+            ref="fileList"
+            class="file-list"
+            role="listbox"
+            aria-label="路线文件"
+            aria-multiselectable="true"
+            :class="{ 'is-mouse-selecting': isMouseSelecting }"
+            @keydown="handleListKeydown"
+            @mousedown="handleListMouseDown"
+            @click="handleListClick"
         >
-          <span class="file-name" :title="item.Name">
-            <icon-folder v-if="item.IsDirectory" class="file-entry-icon folder"/>
-            <icon-file v-else class="file-entry-icon"/>
-            <span>{{ item.Name }}</span>
-          </span>
-          <span class="file-date">{{ formatModified(item.LastModified) }}</span>
-          <span class="file-type">{{ fileTypeLabel(item) }}</span>
-        </button>
+          <button
+              v-for="(item, index) in displayedFiles"
+              :key="item.RelativePath"
+              type="button"
+              class="file-row"
+              :class="{
+                selected: selectedFiles.includes(item.RelativePath),
+                focused: focusedIndex === index,
+                directory: item.IsDirectory,
+                selectable: isJsonFile(item),
+                unavailable: !item.IsDirectory && !isJsonFile(item),
+              }"
+              :data-file-index="index"
+              role="option"
+              :aria-selected="selectedFiles.includes(item.RelativePath)"
+              :tabindex="focusedIndex === index ? 0 : -1"
+              @focus="focusedIndex = index"
+              @dragstart.prevent
+              @click="handleRowClick(item, index, $event)"
+              @dblclick="!item.IsDirectory && activateItem(item, index)"
+          >
+            <span class="file-name" :title="item.Name">
+              <icon-folder v-if="item.IsDirectory" class="file-entry-icon folder"/>
+              <icon-file v-else class="file-entry-icon"/>
+              <span>{{ item.Name }}</span>
+            </span>
+            <span class="file-date">{{ formatModified(item.LastModified) }}</span>
+            <span class="file-type">{{ fileTypeLabel(item) }}</span>
+          </button>
 
-        <div v-if="displayedFiles.length === 0" class="file-empty">
-          此文件夹为空
+          <div v-if="displayedFiles.length === 0" class="file-empty">
+            此文件夹为空
+          </div>
         </div>
         <div v-if="selectionBox" class="file-selection-box" :style="selectionBox" aria-hidden="true"/>
       </div>
@@ -574,18 +585,35 @@ onBeforeUnmount(finishMouseSelection);
   font-weight: 600;
 }
 
-.file-list {
+.file-list-viewport {
   position: relative;
-  min-height: 290px;
-  max-height: min(52dvh, 460px);
-  overflow-y: auto;
-  padding: 4px;
+  height: clamp(290px, 52dvh, 460px);
+  overflow: hidden;
   background: #f8fafc;
   border-radius: 0 0 8px 8px;
+}
+
+.file-list {
+  width: 100%;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 4px;
+  background: transparent;
+  border-radius: inherit;
   scrollbar-gutter: stable;
   outline: 0;
   -webkit-user-select: none;
   user-select: none;
+}
+
+.file-row.directory,
+.file-row.selectable {
+  cursor: pointer;
+}
+
+.file-row.unavailable {
+  cursor: not-allowed;
 }
 
 .file-list.is-mouse-selecting {
